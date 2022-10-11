@@ -1,5 +1,5 @@
-from osrparse import parse_replay_file
-from PIL import Image, ImageFilter
+from osrparse import Replay
+from PIL import Image, ImageFilter, ImageDraw, ImageFont
 from os.path import *
 import requests
 import json
@@ -29,7 +29,7 @@ def replay_info():
     while True:
         print("Make sure the file is in the replays folder")
         try:
-            replay = parse_replay_file("replays/" + input("Replay File Name (include .osr): "))
+            replay = Replay.from_path("replays/" + input("Replay File Name (include .osr): "))
             return replay
 
         except ValueError:
@@ -71,7 +71,11 @@ def find_bg(game_dir, folder, diff):
 
                 for line_num in range(0, 100):
                     if "[Events]" in str(file_lines[line_num]):
-                        return str(file_lines[line_num + 2]).split('"')[1]
+                        for possible_line in range(line_num, line_num + 5):
+                            the_line = str(file_lines[possible_line]).split(',')
+                            print(the_line)
+                            if len(the_line) > 1 and "0" == the_line[0] and "0" == the_line[1]:
+                                return str(file_lines[possible_line]).split('"')[1]
 
 
 def get_user_api_info():
@@ -133,6 +137,7 @@ def calc_crop(bg_img, bg_dim, bg_ratio, yt_dim, yt_ratio):
                                   center_width + (yt_dim[WIDTH] / 2),
                                   center_height + (yt_dim[HEIGHT] / 2)))
             print(bg_img.size, bg_img.size[WIDTH] / float(bg_img.size[HEIGHT]))
+
         # If Width is smaller
         elif bg_dim[WIDTH] < yt_dim[WIDTH] and bg_dim[HEIGHT] > yt_dim[HEIGHT]:
             new_height = int(bg_dim[WIDTH] / yt_ratio)
@@ -196,9 +201,20 @@ def check_cropped_bg_exist():
     return False
 
 
-def generate_thumbnail(bg):
-    bg = bg.filter(ImageFilter.BoxBlur(3))
+def generate_thumbnail(bg_path, player_name, max_combo):
+    bg_file = Image.open(bg_path)
+    bg_file = bg_file.filter(ImageFilter.BoxBlur(3))
+    my_font = ImageFont.truetype('comic.ttf', 90)
+    width, height = bg_file.size
+    bg = ImageDraw.Draw(bg_file)
 
+    message_width, message_height = bg.textsize(player_name)
+    bg.text(((width-message_width)/2, 0), player_name, font=my_font, fill=(255, 0, 0))
+
+    message_width, message_height = bg.textsize(str(max_combo))
+    bg.text(((width-message_width)/2, (height-message_height)/2), str(max_combo), font=my_font, fill=(255, 0, 0))
+    bg_file.show()
+    bg_file.save(bg_path)
 
 
 if __name__ == "__main__":
@@ -220,8 +236,8 @@ if __name__ == "__main__":
     file = replay_info()
     beatmap_params["checksum"] = file.beatmap_hash
 
-    print(file.player_name, file.beatmap_hash, file.mod_combination,
-          file.max_combo, file.is_perfect_combo, file.misses)
+    print(file.username, file.beatmap_hash, file.mods,
+          file.max_combo, file.perfect, file.count_miss)
     print(api_info)
 
     beatmap = requests.get(BEATMAP_LOOKUP_URL, params=beatmap_params, headers=headers)
@@ -234,5 +250,4 @@ if __name__ == "__main__":
     if not check_cropped_bg_exist():
         get_background(file_dir)
 
-    with open(fr"{PATHS['cropped_bg']}\{mapset_id}_{difficulty}.png") as bg_image:
-        generate_thumbnail(bg_image)
+    generate_thumbnail(fr"{PATHS['cropped_bg']}\{mapset_id}_{difficulty}.png", file.username, file.max_combo)
